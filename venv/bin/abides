@@ -1,0 +1,4 @@
+#!/home/julius/Desktop/CompFin/venv/bin/python3
+# EASY-INSTALL-SCRIPT: 'abides-core==0.0.0','abides'
+__requires__ = 'abides-core==0.0.0'
+__import__('pkg_resources').run_script('abides-core==0.0.0', 'abides')

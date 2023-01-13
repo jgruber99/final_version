@@ -1,0 +1,203 @@
+####################   Goal   ######################
+
+# We aim at designing an OTC market simulation with a setting of a n-player partially 
+# observable general sum Markov game - between LP agents, LT agents, and ECNs, where all
+# agents learn optimal behaviors related to their individual incentives, also called 
+# policies by playing against each other. This is now possible using modern AI techniques 
+# in multi-agent reinforcement learning (MARL).
+
+################   Requirements / Desirerata #####################
+
+# 1) take as an input a connectivity graph between pairs of agents and ECNs
+
+# 2i)  LP incentives cover the spectrum from maximizing PnL to market share
+# 2ii) LT incentives cover the spectrum from maximizing PnL to trading for 
+#      exogenous motives, independent of cost.
+
+# 3) Agents actions should emerge while optimizing their incentives as opposed to 
+#    being handcrafted.
+
+# 4) Calibration: we want the simulation to capture certain known observations 
+#    about the market, such as market share of a given agent.
+
+
+################  2.1 Agent types and supertypes ##############
+
+###### 1. Partially Observable Markov Game setting
+
+### Input: nLP, nLT, nECN, conectivity graph (Req1)
+
+### Formal Game Structure: agents 1) get observations, 2) take actions and 3) obtain per-timestep rewards.
+
+### Agent type and supertype
+
+# Agent type includes:
+
+# - risk-aversion acting as a regularizer for PnL, 
+# - its trade-off parameters between PnL, market share and trade quantity targets discussed in section 1, 
+# - as well as its connectivity structure to other agents (this one is a Bernoulli r.v, we sample for each episode)
+
+# So for the agent type we have to assume 3 distributions that describe well the nature of the incentives
+# (basically 2 the last one is the Bernoulli)
+
+# Supertype we need to adjust specific parameters to describe well the nature of the characteristics of the agents
+# We choose less supertypes than the number of the participants in order to be more tractable.
+
+### Informal approach of the procedure
+
+# 1) At each time t ∈ [0,T] LPs first stream bid and ask prices and decide a hedge fraction of their current 
+# inventory to trade on the ECN market. (get observations)
+
+# 2) LTs decide a trade size (possibly zero) and direction based on the observed prices. (take actions)
+
+# At to this point is a stochastic Stackelberg game
+
+# 3) Rewards (Formal approach)
+
+# Define z_{t}(i,k) = ( s_{t}(i,k) , a_{t}(i,k) , λ(i,k) ) , i.e the whole picture of agent i in time t
+# s_{t}(i,k) : state of i agent (k = LP or LT) at time time t
+# a_{t}(i,k) : action of i agent (k = LP or LT) at time time t
+# λ(i,k) : type of the i agent (k = LP or LT), distributed at the beggining of the episode by its supertype.
+
+# Rewards from LP prespective
+
+# At each time t, LP agent i receives an individual reward R( z_{t}(i,k) , z_{t}(-i,k), z_{t}(LT) )
+# z_{t}(i,k) : which is the state, action and distribution specific to i LP agent at time t
+# z_{t}(-i,k) : which is the state, action and distribution to all the others LP agents at time t
+# z_{t}(LT) : which is the state, action and distribution to all the others LT agents at time t
+
+# Rewards from LT prespective
+
+# At each time t, LT agent i receives an individual reward R( z_{t}(i,k) , z_{t}(-i,k), z_{t}(LT) )
+# z_{t}(i,k) : which is the state, action and distribution specific to i LT agent at time t
+# z_{t}(-i,k) : which is the state, action and distribution to all the others LT agents at time t
+# z_{t}(LT) : which is the state, action and distribution to all the others LP agents at time t
+
+
+# Then define Y^{k} := S^{k} x A^{k} x S^{λ^k} ==> this denotes the joint state-action-type structure of the agent
+
+# We define the transition kernel as:
+
+# T: (Y^{LP})^{nLP} x (Y^{LT})^{nLT} x (S^{LP})^{nLP} x (S^{LT})^{nLT} --> [0,1]
+
+# (Y^{LP})^{nLP} : it gives us the whole situation for every LP
+# (Y^{LT})^{nLT} : it gives us the whole situation for every LT
+# (S^{LP})^{nLP} : it gives the states for every LP
+# (S^{LT})^{nLT} : it gives the states for every LT
+
+# So basically state transition kernel T tells us which is the probability to reach the state ( S^{LP} , S^{LT} )
+# having the joint state-action-type structure (z(LP), z(LT))
+
+### Assumption of Type Symmetry
+
+# This is actually means that from the prespective of an agent, his reward doesn't depend to the other LP and LT 
+# agents.
+
+### 2.2 Efficient learning of a spectrum of agent behaviors via reinforcement learning
+
+### 2.2.1 Shared policy conditioned on agent type
+
+# Intuition: Policies represent the family of behaviors we want to learn, so this is what we want to train. 
+# But how we formalize it? We can take of course one policy for each agent but this is not efficient.
+# Hence, we make a shared policy for LP agents where we condition it on the specific agent type, and the same 
+# for the LT agents. So we do not have n mappings but 2 mappings which we need to train. (κ = LP or κ = LT)
+# The mapping is Sκ × Sλκ → ∆(Aκ) (details below) and we train it with a neural network.
+
+# Formula (1):
+# Sk    : the space of states, 
+# Sλκ   : the space of supertypes, 
+# ∆(Aκ) : the space of probability distributions over actions. 
+
+# Denoting Xκ the space of functions Sκ × Sλκ → ∆(Aκ), 
+
+# When πκ belongs in Xκ means, given that we know the state and the supertype of agent i at time t,
+# which is the probability the action of the agent i at time t follows a specific distribution?
+# (where distribution express the behavioral template of the agent)
+# i.e if an agent who has a specific supertype (incentives) and at time t she observes a specific state
+# which probably is her action at this specific situation?
+# In a sense if things are good (state1) I (supertype1) as an LP, I follow some specific strategy (distribution1), 
+# if it is bad (state2) I (supertype1) follow some other strategy (distribution2).
+
+# End of Formula (1)
+
+# Formula (2)
+# We want the expected reward for each agent in the whole episode. At the beginning of the episode we sample
+# a supertype for each agent and based on the network we trained just before, for each time step we simulate the
+# action of each agent conditioned to its type and state. For all these actions we estimate the rewards.
+# End of Formula (2)
+
+### 2.2.2 Reinforcement learning design of OTC agents
+
+# Formula (3):
+# PnL by simple accounting , nothing too special
+# End of Formula (3)
+
+# Now we want to formulate the REWARDS for the LPs. They are maximizing risk-penalized PnL to market share
+# Formula (4):
+# It has 3 parameters:
+# - η is a normalizer to make both quantities comparable
+# - ω is a weight that gives more or less importance to the risk-penalized PnL
+# - γ is the risk aversion (in order to go from PnL (formula 3) to risk-penalized PnL)
+# End of Formula (4)
+
+# Formula (5):
+# This form the ACTIONS of LPs, to give the bid/ask prices to the LTs.
+# The LP constructs its prices on both sides by tweaking the ECN reference price Pt. There are components which
+# reflect the mood of LP, 
+# - The spread tweak (εt,spread) >= -1, where controls the price difference Pta − Ptb and impacts both sides 
+#                                   symmetrically and LP has the chance to stream competitive prices (spread)
+# - The skew tweak (εt,skew) ∈ R, shifts prices asymmetrically towards one side or another, 
+#                                 in order to attract flow to reduce its inventory.
+# - The hedge fraction (εt,hedge) ∈ [0, 1], which results in a market order εt,hedge qt at the ECN.
+# End of Formula (5)
+
+# Formula (6):
+# Now we want to formulate the REWARDS for the LTs.
+# It is almost the same with LPs in the sense that they maximize risk-penalized PnL to a quantity-related term,
+# where the latter describes the fraction of time the LT has bought and sold.
+# End of Formula (6)
+
+# The ACTIONS of the LTs are the most simplistic because they only decide to buy or sell qLT. So it can be 
+# can be assimilated to {1, −1, 0}.
+
+# The whole RL formulation of market agents is summarized in Table 1.
+
+#### 2.3 ECN model
+
+### 2.3.1 Vanilla model
+
+# The ECN is not the main focus of this study, We however need an ECN engine so as to provide a reference price 
+# to market participants, and allow LPs to hedge a fraction of their inventory or LTs to trade if need be.
+
+# Desiderata
+# i) LP and LT agents can impact the ECN limit order book when sending orders to it
+# ii) in the absence of LP and LT agents orders, the ECN evolves realistically over the input RL simulation 
+# timestep dt, in particular its volume remains stable over time and does not explode nor vanish.
+
+# ....
+
+#### 3 Game theoretical analysis and convergence properties
+###  3.1 Shared equilibria: convergence of shared-policy learning in the case of stationary LTs
+
+# Formula (9):
+# It is slightly more general than formula (2) where it should be interpreted as the expected reward of 
+# a LP agent of supertype ΛiLP using π1, while all other LP agents are using π2.
+# End of Formula (9)
+
+# Formula (10):
+# As we already have seen in formula (1) we estimate the shared policy with a neural network. Here in this formula
+# we have the gradient for training.
+# End of Formula (10)
+
+# Formula (11):
+# Proposition 3.1 gives us a way to update the shared policy which yield a less noisy gradient estimate but
+# will not change its bias.
+# The algorithm is 
+# (a) set all agents to use the same policy πθ and
+# (b) pick one agent at random and take a step towards improving its individual reward while keeping other agents
+#    on πθ
+
+
+
+
+
